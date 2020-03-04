@@ -5,7 +5,7 @@
       <paths name="fabian@belledonne.aut.bme.hu:30833">
         <serverdata>
           <mappings>
-            <mapping local="$PROJECT_DIR$" web="/" />
+            <mapping deploy="/media/Projects/fabian/DFEmbeddingAnalyzer" local="$PROJECT_DIR$" web="/" />
           </mappings>
         </serverdata>
       </paths>

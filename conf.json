@@ -1,9 +1,7 @@
 {
-	"realFolder" : "",
-	"fakeFolder" : "",
-	"_real": "side/owxbbpjpch.mp4",
-	"_fake": "side/wynotylpnm.mp4",
-	"real": "front/lzbmwwejxb.mp4",
-	"fake": "front/ysqbnccstr.mp4",
+	"source_enc_file": "none",
+	"dest_enc_file" : "encodings.pickle",
+	"real" : "real",
+	"fake" : "fake",
 	"frame_rate": 3
 }
