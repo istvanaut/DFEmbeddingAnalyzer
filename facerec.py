@@ -7,9 +7,16 @@ import face_recognition
 import pickle
 import pprint
 import matplotlib.pyplot as plt
+import insightface
 
 conf = json.loads(json_minify(open("conf.json").read()))
 enc = None
+
+USE_INSIGHTFACE = bool(conf["USE_INSIGHTFACE"])
+
+if USE_INSIGHTFACE:
+    model = insightface.app.FaceAnalysis()
+    model.prepare(ctx_id = -1, nms=0.4)
 
 if conf["source_enc_file"] == "none": # Ha még nincs enc file akkor csináljunk.
     enc = {"real": {}, "fake": {}}
@@ -31,12 +38,22 @@ if conf["source_enc_file"] == "none": # Ha még nincs enc file akkor csináljunk
 
                 if frameCount % conf["frame_rate"] == 0:
                     print(f"({tp}) Extracting frame {frameCount} from video {videoCount} / {countOfAllVideosOfThisType}")
-                    faceEncoding = face_recognition.face_encodings(frame)
 
-                    if len(faceEncoding) == 1: # Sikerült-e egyáltalán kivenni az embeddinget?
-                        enc[tp][videoFile].append(faceEncoding[0])
-                    else:
-                        print(f"\nWARNING: Couldn't find embedding for frame {frameCount} for {videoFile}\n")
+                    if USE_INSIGHTFACE:
+                        faceEncoding = model.get(frame)
+
+                        if len(faceEncoding) == 1:  # Sikerült-e egyáltalán kivenni az embeddinget?
+                            enc[tp][videoFile].append(faceEncoding[0].embedding)
+                        else:
+                            print(f"\nWARNING: Couldn't find embedding for frame {frameCount} for {videoFile}\n")
+
+                    else: # Using dlib
+                        faceEncoding = face_recognition.face_encodings(frame)
+
+                        if len(faceEncoding) == 1:  # Sikerült-e egyáltalán kivenni az embeddinget?
+                            enc[tp][videoFile].append(faceEncoding[0])
+                        else:
+                            print(f"\nWARNING: Couldn't find embedding for frame {frameCount} for {videoFile}\n")
 
                 if frameCount == 240:
                     break
@@ -131,8 +148,7 @@ for fakeVideo in distancesDict["fake"].keys():
         print(f"\nWARNING! Coudn't compute ymax for {fakeVideo, ' and ' , realVideo} (zero elements)\n")
 
 print("\nPlotting all plots on the same figure...\n")
-
-videoCount = 0
+ideoCount = 0
 for tp in distancesDict.keys():
     for videoFile, distances in distancesDict[tp].items():
         videoCount += 1
@@ -145,6 +161,5 @@ for tp in distancesDict.keys():
         except:
             print(f"\nWARNING! Coudn't compute ymax for {videoFile} (zero element)\n")
 
-plt.ylim(0, 0.5)
 plt.savefig('all.png')
 plt.clf()

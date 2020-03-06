@@ -1,9 +1,12 @@
-testDict = {"real" : {"0_video1": {}, "1_video2": {}}, "fake": {"video500_0":{}, "video501_1":{}}}
+import cv2
+import insightface
+import face_recognition
 
-for fakeVideo in testDict["fake"].keys():
-    print(fakeVideo, fakeVideo.split("_")[-1] + "_")
-    # realVideo = testDict["real"][fakeVideo.split("_")[-1]]
+model = insightface.app.FaceAnalysis()
+model.prepare(ctx_id = -1, nms=0.4)
+img1 = cv2.imread("C:\\Users\\IstvanLaptop\\PycharmProjects\\DFEmbeddingAnalyzer\\akibmagvog_300.jpeg")
+img2 = cv2.imread("C:\\Users\\IstvanLaptop\\PycharmProjects\\DFEmbeddingAnalyzer\\mvuidgordx_60.jpeg")
 
-    result = [i for i in testDict["real"].keys() if i.startswith(fakeVideo.split("_")[-1] + "_")]
+face1if = model.get(img1)
 
-    print(result)
+face1fr = face_recognition.face_encodings(img1)
