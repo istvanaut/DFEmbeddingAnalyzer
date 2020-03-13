@@ -14,6 +14,13 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import confusion_matrix
 import seaborn as sn
 import time
+from sklearn.model_selection import cross_val_score
+from sklearn.linear_model import LogisticRegression
+from sklearn.svm import SVC
+from sklearn.model_selection import GridSearchCV
+
+def listAverage(lst):
+    return sum(lst) / len(lst)
 
 conf = json.loads(json_minify(open("conf.json").read()))
 enc = None
@@ -122,9 +129,8 @@ else: # Ha már van encoding file akkor használjuk azt.
     with open(conf["source_enc_file"], 'rb') as f:
         enc = pickle.load(f)
 
-print("\nStarting to calculate distances from centroid...\n")
-
 if conf["source_feature_file"] == "none": # Ha még nincs feature file akkor csináljunk.
+    print("\nStarting to calculate distances from centroid...\n")
     countOfRealPlusFakeVideos = len(enc["real"].keys()) + len(enc["fake"].keys())
     distancesDict = {"real": {}, "fake": {}}
     videoCount = 0
@@ -153,58 +159,100 @@ else: # Ha már van feature file akkor használjuk azt.
     with open(conf["source_feature_file"], 'rb') as f:
         distancesDict = pickle.load(f)
 
-if conf["source_model_file"] == "none": # Ha még nincs feature file akkor csináljunk.
+# pprint.pprint(distancesDict)
 
-    pprint.pprint(distancesDict)
+# Get the length of any feature vector
+featureVectLength = len(distancesDict["real"][random.choice(list(distancesDict["real"]))])
 
-    # Get the length of any feature vector
-    featureVectLength = len(distancesDict["real"][random.choice(list(distancesDict["real"]))])
+data = np.empty((1,featureVectLength + 1)) # This "empty" row will have to be deleted (add the +1 for Target column)
 
-    data = np.empty((1,featureVectLength + 1)) # This "empty" row will have to be deleted (add the +1 for Target column)
+for tp in distancesDict.keys():
+    for videoFile,  features in distancesDict[tp].items():
+        if tp == "real":
+            features = np.append(features, 0)
+        elif tp == "fake":
+            features = np.append(features, 1)
 
-    for tp in distancesDict.keys():
-        for videoFile,  features in distancesDict[tp].items():
-            if tp == "real":
-                features = np.append(features, 0)
-            elif tp == "fake":
-                features = np.append(features, 1)
+        features = features[np.newaxis, :]
+        data = np.append(data, features, axis=0)
 
-            features = features[np.newaxis, :]
-            data = np.append(data, features, axis=0)
+data = np.delete(data, (0), axis=0) # Delete first "empty" row
 
-    data = np.delete(data, (0), axis=0) # Delete first "empty" row
+featureVectColumns = []
+for i in range(featureVectLength):
+    featureVectColumns.append("f" + str(i+1))
 
-    featureVectColumns = []
-    for i in range(featureVectLength):
-        featureVectColumns.append("f" + str(i+1))
+featureVectColumns.append("target")
 
-    featureVectColumns.append("target")
+df = pd.DataFrame(data, columns=featureVectColumns) #creates a new dataframe that's empty
 
-    df = pd.DataFrame(data, columns=featureVectColumns) #creates a new dataframe that's empty
+dfData = df.drop([featureVectColumns[-1], featureVectColumns[-2]], axis="columns")
+dfTarget = df["target"]
 
-    print(df)
+model_params = {
+    'svm': {
+        'model': SVC(gamma='auto'),
+        'params' : {
+            'C': [1,10,20,50,100],
+            'kernel': ['rbf','linear']
+        }
+    },
+    'random_forest': {
+        'model': RandomForestClassifier(),
+        'params' : {
+            'n_estimators': [10, 50,100,300]
+        }
+    },
+    'logistic_regression' : {
+        'model': LogisticRegression(solver='liblinear',multi_class='auto'),
+        'params': {
+            'C': [1,5,10,50, 100]
+        }
+    }
+}
 
-    X_train, X_test, y_train, y_test = train_test_split(df.drop(["target"], axis="columns"), df["target"], test_size=0.2)
+scores = []
 
-    print("X_train length ", len(X_train))
-    print("X_test length ", len(X_test))
-    print("y_train length ", len(y_train))
-    print("y_test length ", len(y_test))
+for model_name, mp in model_params.items():
+    clf = GridSearchCV(mp['model'], mp['params'], cv=3, return_train_score=True)
+    clf.fit(dfData, dfTarget)
+    scores.append({
+        'model': model_name,
+        'best_score': clf.best_score_,
+        'best_params': clf.best_params_
+    })
 
-    model = RandomForestClassifier()
-    model.fit(X_train, y_train)
+dfResults = pd.DataFrame(scores, columns=['model', 'best_score', 'best_params'])
 
-    pickle.dump(model, open("RFmodel.pickle", 'wb'))
+print(dfResults)
 
-    score = model.score(X_test, y_test)
-    print("test score = ", score)
+# print(listAverage(cross_val_score(LogisticRegression(), dfData, dfTarget, cv=3)))
+# print(listAverage(cross_val_score(SVC(), dfData, dfTarget, cv=3)))
+# print(listAverage(cross_val_score(RandomForestClassifier(), dfData, dfTarget, cv=3)))
 
-    y_predicted = model.predict(X_test)
 
-    cm = confusion_matrix(y_test, y_predicted)
+# X_train, X_test, y_train, y_test = train_test_split(df.drop([featureVectColumns[-1], featureVectColumns[-2]],
+#                                                             axis="columns"), df["target"], test_size=0.2)
 
-    plt.figure(figsize=(10,7))
-    sn.heatmap(cm, annot = True)
-    plt.xlabel("Predicted")
-    plt.ylabel("Truth")
-    plt.savefig("confusionmatrix_score_" + str(score) + "_" + str(time.time()).split(".")[0] + ".png")
+# print("X_train length ", len(X_train))
+# print("X_test length ", len(X_test))
+# print("y_train length ", len(y_train))
+# print("y_test length ", len(y_test))
+#
+# model = RandomForestClassifier(n_estimators=500)
+# model.fit(X_train, y_train)
+
+# pickle.dump(model, open("RFmodel.pickle", 'wb'))
+
+# score = model.score(X_test, y_test)
+# print("test score = ", score)
+
+# y_predicted = model.predict(X_test)
+#
+# cm = confusion_matrix(y_test, y_predicted)
+#
+# plt.figure(figsize=(10,7))
+# sn.heatmap(cm, annot = True)
+# plt.xlabel("Predicted")
+# plt.ylabel("Truth")
+# plt.savefig("confusionmatrix_score_" + str(score) + "_" + str(time.time()).split(".")[0] + ".png")
