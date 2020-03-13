@@ -13,6 +13,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import confusion_matrix
 import seaborn as sn
+import time
 
 conf = json.loads(json_minify(open("conf.json").read()))
 enc = None
@@ -28,7 +29,7 @@ if USE_INSIGHTFACE:
     model = insightface.app.FaceAnalysis()
     model.prepare(ctx_id = -1, nms=0.4)
 
-if conf["source_feature_file"] == "none": # Ha még nincs feature file akkor csináljunk.
+if conf["source_enc_file"] == "none": # Ha még nincs feature file akkor csináljunk.
     enc = {"real": {}, "fake": {}}
     print("Starting to extract frames and embeddings from videos...")
     for tp in ["real", "fake"]:
@@ -104,7 +105,10 @@ if conf["source_feature_file"] == "none": # Ha még nincs feature file akkor csi
                     sumOfEncodings += encoding
                     numberOfEncodings += 1
             try:
-                centroid = sumOfEncodings / numberOfEncodings
+                if numberOfEncodings != 0:
+                    centroid = sumOfEncodings / numberOfEncodings
+                else:
+                    centroid = None
             except:
                 print(f"\nERROR! Coudn't compute centroid for {videoFile} (division by zero)")
                 print(f"List of encodings: {listOfEncodings}\n")
@@ -114,83 +118,93 @@ if conf["source_feature_file"] == "none": # Ha még nincs feature file akkor csi
     with open(conf["dest_enc_file"], 'wb') as f:
         pickle.dump(enc, f)
 
-    print("\nStarting to calculate distances from centroid...\n")
+else: # Ha már van encoding file akkor használjuk azt.
+    with open(conf["source_enc_file"], 'rb') as f:
+        enc = pickle.load(f)
 
+print("\nStarting to calculate distances from centroid...\n")
+
+if conf["source_feature_file"] == "none": # Ha még nincs feature file akkor csináljunk.
+    countOfRealPlusFakeVideos = len(enc["real"].keys()) + len(enc["fake"].keys())
     distancesDict = {"real": {}, "fake": {}}
     videoCount = 0
     for tp in enc.keys():
         for videoFile, encodingsAndCentroid in enc[tp].items():
             videoCount += 1
             print(f"Calculating and normalizing distances from centroid for video {videoCount} out of {countOfRealPlusFakeVideos}")
-            distancesDict[tp][videoFile] = []
             centroid = encodingsAndCentroid[-1][videoFile + "_centroid"]
-            for encoding in encodingsAndCentroid[:-1]:
-                if encoding is not None:
-                    distanceFromCentroid = np.linalg.norm(centroid - encoding)
-                    distancesDict[tp][videoFile].append(distanceFromCentroid)
-                else:
-                    distancesDict[tp][videoFile].append(0)
-            distancesDict[tp][videoFile] = distancesDict[tp][videoFile]/max(distancesDict[tp][videoFile])
-            distancesDict[tp][videoFile].sort()
+
+            if centroid is not None:
+                distancesDict[tp][videoFile] = []
+
+                for encoding in encodingsAndCentroid[:-1]:
+                    if encoding is not None:
+                        distanceFromCentroid = np.linalg.norm(centroid - encoding)
+                        distancesDict[tp][videoFile].append(distanceFromCentroid)
+                    else:
+                        distancesDict[tp][videoFile].append(0)
+
+                distancesDict[tp][videoFile] = distancesDict[tp][videoFile]/max(distancesDict[tp][videoFile])
+                distancesDict[tp][videoFile].sort()
 
     with open(conf["dest_feature_file"], 'wb') as f:
         pickle.dump(distancesDict, f)
-
 else: # Ha már van feature file akkor használjuk azt.
     with open(conf["source_feature_file"], 'rb') as f:
         distancesDict = pickle.load(f)
 
-pprint.pprint(distancesDict)
+if conf["source_model_file"] == "none": # Ha még nincs feature file akkor csináljunk.
 
+    pprint.pprint(distancesDict)
 
-# Get the length of any feature vector
-featureVectLength = len(distancesDict["real"][random.choice(list(distancesDict["real"]))])
+    # Get the length of any feature vector
+    featureVectLength = len(distancesDict["real"][random.choice(list(distancesDict["real"]))])
 
-data = np.empty((1,featureVectLength + 1)) # This "empty" row will have to be deleted (add the +1 for Target column)
+    data = np.empty((1,featureVectLength + 1)) # This "empty" row will have to be deleted (add the +1 for Target column)
 
-for tp in distancesDict.keys():
-    for videoFile,  features in distancesDict[tp].items():
-        if tp == "real":
-            features = np.append(features, 0)
-        elif tp == "fake":
-            features = np.append(features, 1)
+    for tp in distancesDict.keys():
+        for videoFile,  features in distancesDict[tp].items():
+            if tp == "real":
+                features = np.append(features, 0)
+            elif tp == "fake":
+                features = np.append(features, 1)
 
-        features = features[np.newaxis, :]
-        data = np.append(data, features, axis=0)
+            features = features[np.newaxis, :]
+            data = np.append(data, features, axis=0)
 
-data = np.delete(data, (0), axis=0) # Delete first "empty" row
+    data = np.delete(data, (0), axis=0) # Delete first "empty" row
 
-featureVectColumns = []
-for i in range(featureVectLength):
-    featureVectColumns.append("f" + str(i+1))
+    featureVectColumns = []
+    for i in range(featureVectLength):
+        featureVectColumns.append("f" + str(i+1))
 
-featureVectColumns.append("target")
+    featureVectColumns.append("target")
 
-df = pd.DataFrame(data, columns=featureVectColumns) #creates a new dataframe that's empty
+    df = pd.DataFrame(data, columns=featureVectColumns) #creates a new dataframe that's empty
 
-print(df)
+    print(df)
 
-X_train, X_test, y_train, y_test = train_test_split(df.drop(["target"], axis="columns"), df["target"], test_size=0.2)
+    X_train, X_test, y_train, y_test = train_test_split(df.drop(["target"], axis="columns"), df["target"], test_size=0.2)
 
-print("X_train length ", len(X_train))
-print("X_test length ", len(X_test))
-print("y_train length ", len(y_train))
-print("y_test length ", len(y_test))
+    print("X_train length ", len(X_train))
+    print("X_test length ", len(X_test))
+    print("y_train length ", len(y_train))
+    print("y_test length ", len(y_test))
 
-model = RandomForestClassifier()
-model.fit(X_train, y_train)
+    model = RandomForestClassifier()
+    model.fit(X_train, y_train)
 
-pickle.dump(model, open("RFmodel.pickle", 'wb'))
+    pickle.dump(model, open("RFmodel.pickle", 'wb'))
 
-score = model.score(X_test, y_test)
+    score = model.score(X_test, y_test)
+    print("test score = ", score)
 
-print("X_test y_test score = ", score)
+    y_predicted = model.predict(X_test)
 
-y_predicted = model.predict(X_test)
+    cm = confusion_matrix(y_test, y_predicted)
 
-cm = confusion_matrix(y_test, y_predicted)
-
-plt.figure(figsize=(10,7))
-sn.heatmap(cm, annot = True)
-plt.xlabel("Predicted")
-plt.ylabel("Truth")
+    plt.figure(figsize=(10,7))
+    sn.heatmap(cm, annot = True)
+    plt.xlabel("Predicted")
+    plt.ylabel("Truth")
+    plt.savefig("confusionmatrix_score_" + str(score) + "_" + str(time.time()).split(".")[0] + ".png")
