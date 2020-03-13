@@ -62,8 +62,8 @@ if conf["source_enc_file"] == "none": # Ha még nincs enc file akkor csináljunk
                             genderDict[tp][videoFile].append(faceEncoding[0].gender)
                         else:
                             enc[tp][videoFile].append(None)
-                            agesDict[tp][videoFile].append(-3)
-                            genderDict[tp][videoFile].append(None)
+                            # agesDict[tp][videoFile].append(-3)
+                            # genderDict[tp][videoFile].append(None)
                             print(f"\nWARNING: Couldn't find embedding for frame {frameCount} for {videoFile}\n")
 
                     else: # Using dlib

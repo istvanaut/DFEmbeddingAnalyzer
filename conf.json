@@ -1,8 +1,10 @@
 {
 	"source_enc_file": "none",
-	"dest_enc_file" : "IFencodings.pickle",
+	"dest_enc_file" : "IFenc.pickle",
+	"source_feature_file": "none",
+	"dest_feature_file": "IFfeatures.pickle",
 	"real" : "real",
 	"fake" : "fake",
-	"frame_rate": 3,
-	"USE_INSIGHTFACE": "True"
+	"frame_rate": 9,
+	"USE_INSIGHTFACE": 1
 }
