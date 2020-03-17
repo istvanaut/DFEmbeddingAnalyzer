@@ -142,7 +142,12 @@ if conf["source_feature_file"] == "none": # Ha még nincs feature file akkor csi
             print(f"Calculating and normalizing distances from centroid for video {videoCount} out of {countOfRealPlusFakeVideos}")
             centroid = encodingsAndCentroid[-1][videoFile + "_centroid"]
 
-            if centroid is not None:
+            noneValuesInEmbeddings = 0
+            for j in encodingsAndCentroid[:-1]:
+                if j is None:
+                    noneValuesInEmbeddings += 1
+
+            if centroid is not None and noneValuesInEmbeddings < 5:
                 distancesDict[tp][videoFile] = []
 
                 for encoding in encodingsAndCentroid[:-1]:
@@ -152,8 +157,14 @@ if conf["source_feature_file"] == "none": # Ha még nincs feature file akkor csi
                     else:
                         distancesDict[tp][videoFile].append(0)
 
-                distancesDict[tp][videoFile] = distancesDict[tp][videoFile]/max(distancesDict[tp][videoFile])
-                distancesDict[tp][videoFile].sort()
+                maxValue = max(distancesDict[tp][videoFile])
+
+                if maxValue > 0:
+                    distancesDict[tp][videoFile] = distancesDict[tp][videoFile]/maxValue
+                    distancesDict[tp][videoFile].sort()
+                else:
+                    print(f"Only zero values for video {videoFile}")
+                    pprint.pprint(enc["fake"][videoFile])
 
     with open(conf["dest_feature_file"], 'wb') as f:
         pickle.dump(distancesDict, f)
@@ -166,10 +177,12 @@ else: # Ha már van feature file akkor használjuk azt.
 # Get the length of any feature vector
 featureVectLength = len(distancesDict["real"][random.choice(list(distancesDict["real"]))])
 
-data = np.empty((1,featureVectLength + 1)) # This "empty" row will have to be deleted (add the +1 for Target column)
+data = np.empty((1,featureVectLength + 2)) # This "empty" row will have to be deleted (add the +1 for Target column)
 
 for tp in distancesDict.keys():
     for videoFile,  features in distancesDict[tp].items():
+        featuresStd = np.ndarray.std(features)
+        features = np.append(features, featuresStd)
         if tp == "real":
             features = np.append(features, 0)
         elif tp == "fake":
@@ -184,13 +197,17 @@ featureVectColumns = []
 for i in range(featureVectLength):
     featureVectColumns.append("f" + str(i+1))
 
+featureVectColumns.append("std")
 featureVectColumns.append("target")
 
 df = pd.DataFrame(data, columns=featureVectColumns)
+
 df = df.sample(frac=1).reset_index(drop=True)
 
 dfData = df.drop([featureVectColumns[-1], featureVectColumns[-2]], axis="columns")
 dfTarget = df["target"]
+
+print(df.size)
 
 # model_params = {
 #     'svm': {
@@ -233,34 +250,34 @@ dfTarget = df["target"]
 # print(listAverage(cross_val_score(SVC(), dfData, dfTarget, cv=3)))
 # print(listAverage(cross_val_score(RandomForestClassifier(), dfData, dfTarget, cv=3)))
 
-clf = GridSearchCV(RandomForestClassifier(), {'n_estimators': [5, 10, 20, 30, 50, 100, 300]}, cv=5, return_train_score=False)
-clf.fit(dfData, dfTarget)
+# clf = GridSearchCV(RandomForestClassifier(), {'n_estimators': [5, 10, 20, 30, 50, 100, 300]}, cv=5, return_train_score=False)
+# clf.fit(dfData, dfTarget)
+#
+# clfDf = pd.DataFrame(clf.cv_results_)
+#
+# print(clfDf[['param_n_estimators', 'split0_test_score', 'split1_test_score', 'split2_test_score', 'mean_test_score']])
 
-clfDf = pd.DataFrame(clf.cv_results_)
+X_train, X_test, y_train, y_test = train_test_split(dfData, dfTarget, test_size=0.2)
 
-print(clfDf[['param_n_estimators', 'split0_test_score', 'split1_test_score', 'split2_test_score', 'mean_test_score']])
+print("X_train length ", len(X_train))
+print("X_test length ", len(X_test))
+print("y_train length ", len(y_train))
+print("y_test length ", len(y_test))
 
-# X_train, X_test, y_train, y_test = train_test_split(dfData, dfTarget, test_size=0.2)
+model = RandomForestClassifier()
+model.fit(X_train, y_train)
 
-# print("X_train length ", len(X_train))
-# print("X_test length ", len(X_test))
-# print("y_train length ", len(y_train))
-# print("y_test length ", len(y_test))
-#
-# model = RandomForestClassifier()
-# model.fit(X_train, y_train)
-#
-# pickle.dump(model, open("RFmodel.pickle", 'wb'))
-#
-# score = model.score(X_test, y_test)
-# print("test score = ", score)
-#
-# y_predicted = model.predict(X_test)
-#
-# cm = confusion_matrix(y_test, y_predicted)
-#
-# plt.figure(figsize=(10,7))
-# sn.heatmap(cm, annot = True)
-# plt.xlabel("Predicted")
-# plt.ylabel("Truth")
-# plt.savefig("confusionmatrix_score_" + str(score) + "_" + str(time.time()).split(".")[0] + ".png")
+pickle.dump(model, open("RFmodel.pickle", 'wb'))
+
+score = model.score(X_test, y_test)
+print("test score = ", score)
+
+y_predicted = model.predict(X_test)
+
+cm = confusion_matrix(y_test, y_predicted)
+
+plt.figure(figsize=(10,7))
+sn.heatmap(cm, annot = True)
+plt.xlabel("Predicted")
+plt.ylabel("Truth")
+plt.savefig("confusionmatrix_score_" + str(score) + "_" + str(time.time()).split(".")[0] + ".png")
